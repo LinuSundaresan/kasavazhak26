@@ -1,0 +1,132 @@
+<?php
+
+namespace App\Http\Controllers\Frontend;
+
+use App\Http\Controllers\Controller;
+use App\Interfaces\BrandRepositoryInterface;
+use App\Interfaces\CategoryRepositoryInterface;
+use App\Interfaces\ChildCategoryRepositoryInterface;
+use App\Interfaces\ProductRepositoryInterface;
+use App\Interfaces\SubCategoryRepositoryInterface;
+use App\Models\Adverisement;
+use App\Models\Product;
+use App\Models\ProductReview;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Session;
+
+class FrontendProductController extends Controller
+{
+    public function productsIndex(Request $request)
+    {
+        if($request->has('category')){
+            $category = app(CategoryRepositoryInterface::class)->getBySlug($request->category);
+            $products = Product::withAvg('reviews', 'rating')->withCount('reviews')
+            ->with(['variants', 'category', 'productImageGalleries'])
+            ->where([
+                'category_id' => $category->id,
+                'status' => 1,
+                'is_approved' => 1
+            ])
+            ->when($request->has('range'), function($query) use ($request){
+                $price = explode(';', $request->range);
+                $from = $price[0];
+                $to = $price[1];
+
+                return $query->where('price', '>=', $from)->where('price', '<=', $to);
+            })
+            ->paginate(12);
+        }elseif($request->has('subcategory')){
+            $category = app(SubCategoryRepositoryInterface::class)->getBySlug($request->subcategory);
+            $products = Product::withAvg('reviews', 'rating')->withCount('reviews')
+            ->with(['variants', 'category', 'productImageGalleries'])
+            ->where([
+                'sub_category_id' => $category->id,
+                'status' => 1,
+                'is_approved' => 1
+            ])
+            ->when($request->has('range'), function($query) use ($request){
+                $price = explode(';', $request->range);
+                $from = $price[0];
+                $to = $price[1];
+
+                return $query->where('price', '>=', $from)->where('price', '<=', $to);
+            })
+            ->paginate(12);
+        }elseif($request->has('childcategory')){
+            $category = app(ChildCategoryRepositoryInterface::class)->getBySlug($request->childcategory);
+
+            $products = Product::withAvg('reviews', 'rating')->withCount('reviews')
+            ->with(['variants', 'category', 'productImageGalleries'])
+            ->where([
+                'child_category_id' => $category->id,
+                'status' => 1,
+                'is_approved' => 1
+            ])
+            ->when($request->has('range'), function($query) use ($request){
+                $price = explode(';', $request->range);
+                $from = $price[0];
+                $to = $price[1];
+
+                return $query->where('price', '>=', $from)->where('price', '<=', $to);
+            })
+            ->paginate(12);
+        }elseif($request->has('brand')){
+           $brand = app(BrandRepositoryInterface::class)->getBySlug($request->brand);
+
+            $products = Product::withAvg('reviews', 'rating')->withCount('reviews')
+            ->with(['variants', 'category', 'productImageGalleries'])
+            ->where([
+                'brand_id' => $brand->id,
+                'status' => 1,
+                'is_approved' => 1
+            ])
+            ->when($request->has('range'), function($query) use ($request){
+                $price = explode(';', $request->range);
+                $from = $price[0];
+                $to = $price[1];
+
+                return $query->where('price', '>=', $from)->where('price', '<=', $to);
+            })
+            ->paginate(12);
+        }elseif($request->has('search')){
+            $products = Product::withAvg('reviews', 'rating')->withCount('reviews')
+            ->with(['variants', 'category', 'productImageGalleries'])
+            ->where(['status' => 1, 'is_approved' => 1])
+            ->where(function ($query) use ($request){
+                $query->where('name', 'like', '%'.$request->search.'%')
+                    ->orWhere('long_description', 'like', '%'.$request->search.'%')
+                    ->orWhereHas('category', function($query) use ($request){
+                        $query->where('name', 'like', '%'.$request->search.'%')
+                            ->orWhere('long_description', 'like', '%'.$request->search.'%');
+                    });
+            })
+            ->paginate(12);
+
+        }else {
+            $products = Product::withAvg('reviews', 'rating')->withCount('reviews')
+            ->with(['variants', 'category', 'productImageGalleries'])
+            ->where(['status' => 1, 'is_approved' => 1])->orderBy('id', 'DESC')->paginate(12);
+        }
+
+        $categories = app(CategoryRepositoryInterface::class)->getActiveCategories();
+        $brands = app(BrandRepositoryInterface::class)->getActiveBrands();
+        // banner ad
+        $productpage_banner_section = Adverisement::where('key', 'productpage_banner_section')->first();
+        $productpage_banner_section = json_decode($productpage_banner_section?->value);
+
+        return view('frontend.pages.product', compact('products', 'categories', 'brands', 'productpage_banner_section'));
+    }
+
+    /** Show product detail page */
+    public function showProduct(string $slug)
+    {
+        $product = app(ProductRepositoryInterface::class)->getBySlug($slug);
+        $reviews = ProductReview::where('product_id', $product->id)->where('status', 1)->paginate(10);
+        return view('frontend.pages.product-detail', compact('product', 'reviews'));
+    }
+
+    public function chageListView(Request $request)
+    {
+       Session::put('product_list_style', $request->style);
+    }
+}
